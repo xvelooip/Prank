@@ -1,0 +1,123 @@
+<!DOCTYPE html>
+<html>
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
+<title>RAT Control</title>
+<style>
+* { margin:0; padding:0; box-sizing:border-box; }
+body { background:#111; color:#fff; font-family:sans-serif; touch-action:none; }
+#canvas { display:block; width:100%; max-width:800px; margin:0 auto; touch-action:none; }
+#controls { display:flex; flex-wrap:wrap; gap:4px; padding:8px; justify-content:center; max-width:800px; margin:0 auto; }
+.key { background:#333; padding:8px 12px; border-radius:4px; color:#fff; font-size:14px; cursor:pointer; user-select:none; min-width:40px; text-align:center; touch-action:manipulation; }
+.key:active { background:#555; }
+.row { display:flex; gap:4px; flex-wrap:wrap; justify-content:center; }
+#typeInput { flex:1; background:#222; border:1px solid #555; color:#fff; padding:6px; min-width:150px; }
+#typeSend { background:#333; border:1px solid #555; color:#fff; padding:6px 12px; cursor:pointer; }
+</style>
+</head>
+<body>
+<canvas id="canvas"></canvas>
+<div id="controls">
+  <div class="row">
+    <div class="key" data-key="87">W</div>
+    <div class="key" data-key="65">A</div>
+    <div class="key" data-key="83">S</div>
+    <div class="key" data-key="68">D</div>
+    <div class="key" data-key="32">Space</div>
+    <div class="key" data-key="16">Shift</div>
+    <div class="key" data-key="17">Ctrl</div>
+  </div>
+  <div class="row">
+    <div class="key" data-key="37">←</div>
+    <div class="key" data-key="38">↑</div>
+    <div class="key" data-key="39">→</div>
+    <div class="key" data-key="40">↓</div>
+    <div class="key" data-key="27">Esc</div>
+    <div class="key" data-key="13">Enter</div>
+  </div>
+  <div class="row">
+    <input type="text" id="typeInput" placeholder="Type text...">
+    <button id="typeSend">Send</button>
+  </div>
+</div>
+<script>
+const canvas = document.getElementById('canvas');
+const ctx = canvas.getContext('2d');
+const protocol = window.location.protocol === 'https:' ? 'wss:' : 'ws:';
+const ws = new WebSocket(protocol + '//' + location.host + '/browser');
+let img = new Image();
+let scale = 1;
+
+ws.onmessage = (e) => {
+  const data = JSON.parse(e.data);
+  if (data.type === 'screenshot') {
+    img.src = 'data:image/jpeg;base64,' + data.data;
+  }
+};
+
+img.onload = () => {
+  const ratio = img.width / img.height;
+  canvas.width = Math.min(window.innerWidth, 800);
+  canvas.height = canvas.width / ratio;
+  ctx.drawImage(img, 0, 0, canvas.width, canvas.height);
+  scale = canvas.width / img.width;
+};
+
+function sendMouse(clientX, clientY) {
+  const rect = canvas.getBoundingClientRect();
+  const x = (clientX - rect.left) / scale;
+  const y = (clientY - rect.top) / scale;
+  ws.send('mouse_move ' + Math.round(x) + ' ' + Math.round(y));
+}
+
+canvas.addEventListener('touchstart', (e) => {
+  e.preventDefault();
+  const touch = e.touches[0];
+  sendMouse(touch.clientX, touch.clientY);
+});
+canvas.addEventListener('touchmove', (e) => {
+  e.preventDefault();
+  const touch = e.touches[0];
+  sendMouse(touch.clientX, touch.clientY);
+});
+canvas.addEventListener('click', (e) => {
+  sendMouse(e.clientX, e.clientY);
+  ws.send('mouse_click 1');
+});
+canvas.addEventListener('contextmenu', (e) => {
+  e.preventDefault();
+  ws.send('mouse_click 4');
+});
+
+document.querySelectorAll('.key').forEach(el => {
+  const keyCode = parseInt(el.dataset.key);
+  const sendKey = (press) => {
+    ws.send(press ? 'key_press ' + keyCode : 'key_release ' + keyCode);
+  };
+  el.addEventListener('touchstart', (e) => {
+    e.preventDefault();
+    sendKey(true);
+  });
+  el.addEventListener('touchend', (e) => {
+    e.preventDefault();
+    sendKey(false);
+  });
+  el.addEventListener('mousedown', () => sendKey(true));
+  el.addEventListener('mouseup', () => sendKey(false));
+  el.addEventListener('mouseleave', () => sendKey(false));
+});
+
+document.getElementById('typeSend').addEventListener('click', () => {
+  const text = document.getElementById('typeInput').value;
+  if (text) {
+    ws.send('type_text ' + text);
+    document.getElementById('typeInput').value = '';
+  }
+});
+document.getElementById('typeInput').addEventListener('keydown', (e) => {
+  if (e.key === 'Enter') document.getElementById('typeSend').click();
+});
+</script>
+</body>
+  </html>
